@@ -1,12 +1,12 @@
 from lxml import etree
 import os
 import re
-os.chdir("C:\\Users\\Reed\\Desktop\\wiki_xml")
+os.chdir("C:\\Users\\Reed\\Documents\\GitHub\\wikiplus1")
 
 
 # get wiki article text and title
 #CHECK IF NOT CATEGORY/REDIRECT/DISAMBIGUATION PAGE??????
-fn1="train_notemp.xml"
+fn1="DdumpAlgebra.xml"
 
 def dump_parser(file=fn1):
     tree=etree.parse(fn1)
