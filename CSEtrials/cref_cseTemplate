@@ -1,0 +1,34 @@
+<GoogleCustomizations>
+<CustomSearchEngine>
+<Title>Wiki Plus One Tester</Title>
+<Description>for searching through websites</Description>
+<Context>
+<BackgroundLabels>
+<Label name="wiki_one" mode="FILTER"/>
+</BackgroundLabels>
+</Context>
+<LookAndFeel nonprofit="true">
+
+<Colors url="#0B610B" background="#0040FF" border="#FF6600" title="#FF3300" text="#000000" visited="#663399" light="#FF0077"/>
+</LookAndFeel>
+</CustomSearchEngine>
+<!--
+ You need not include files to add annotations. Adding them inline as shown here will work as well 
+-->
+<Annotations>
+    
+    <!--Put new url in this format: right below this comment:
+     
+     <Annotation about="http://www.newURL.bla/*">
+     <label name="newlabel"/>
+     </Annotation>
+     
+     -->
+
+<!-- Add these two lines below to the file after adding the urls to end the fil\
+ e:
+ </Annotations>
+ 
+ </GoogleCustomizations>
+ -->
+
