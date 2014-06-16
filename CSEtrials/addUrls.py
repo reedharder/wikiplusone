@@ -1,12 +1,19 @@
+import codecs
 import sys
 import os 
 
-if len(sys.argv) == 1:
-    print("Please enter a name for your output file")
+if len(sys.argv) != 3:
+    print("Please enter your instruction in the following format")
+    print("python addUrls.py [inputUrlFilePath.txt] [outFileName.xml]")
     sys.exit()
 
-fileName = sys.argv[1]
+txtFileName=sys.argv[1]
+fileName = sys.argv[2]
 fileRoot = fileName[:-4]
+
+if txtFileName[-4:] != '.txt':
+    print("Enter a file name that ends in .txt please")
+    sys.exit()
 
 if fileName[-4:] != '.xml':
     print("Enter a file name that ends in .xml please")
@@ -16,11 +23,12 @@ if fileName[-4:] != '.xml':
 template = open("cref_cseTemplate",'r')
 
 #Read the urls into urlList
-urls = open("4urls.txt",'r')
+urls = open(txtFileName,'r')
 urlList = urls.readlines()
 
 #Create a new CSE file
 newCSE = open(fileName,'a')
+#newCSE.write("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n")
 
 #Add the necessary template stuff to the top of the newCSE file
 for line in template:
@@ -35,7 +43,7 @@ while (1):
     for line in urlList[i:]:
         #Add url as a new line to the file newCSE and increment the line counter i
         line = line[:-2] 
-        line = line.replace("&","&amp;");
+        line = line.replace("&","&amp;")
         newCSE.write("\n")
         newCSE.write("<Annotation about=\""+line+"\"> \n")
         newCSE.write("<label name=\"wiki_one\"/>\n")
@@ -58,6 +66,7 @@ while (1):
             newCSE.close()
             newCSE = open(fileName,'a')
             #Add the necessary template stuff to the top of the newCSE file   
+            #newCSE.write("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n")
             for Line in template:
                 newCSE.write(Line)
             template.seek(0)
