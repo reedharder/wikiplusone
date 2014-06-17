@@ -28,7 +28,7 @@ urlList = urls.readlines()
 
 #Create a new CSE file
 newCSE = open(fileName,'a')
-#newCSE.write("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n")
+newCSE.write("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n")
 
 #Add the necessary template stuff to the top of the newCSE file
 for line in template:
@@ -66,7 +66,7 @@ while (1):
             newCSE.close()
             newCSE = open(fileName,'a')
             #Add the necessary template stuff to the top of the newCSE file   
-            #newCSE.write("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n")
+            newCSE.write("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n")
             for Line in template:
                 newCSE.write(Line)
             template.seek(0)
