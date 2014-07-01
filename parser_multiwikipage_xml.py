@@ -3,6 +3,8 @@
 Created on Thu Jun 12 10:22:08 2014
 
 @author: Reed
+
+Parser for wiki xml docs with multiple wiki pages, though not suitable for large files 
 """
 from lxml import etree
 import os
@@ -18,7 +20,7 @@ os.chdir("C:\\Users\\Reed\\Documents\\GitHub\\wikiplus1")
 
 # get wiki article text and title
 #CHECK IF NOT CATEGORY/REDIRECT/DISAMBIGUATION PAGE??????
-fn1="DdumpAlgebra.xml"
+file="DdumpAlgebra.xml"
 
 def dump_parser(file="DdumpAlgebra.xml", txt_out="wikilinks1.txt"):
   
@@ -45,7 +47,7 @@ def dump_parser(file="DdumpAlgebra.xml", txt_out="wikilinks1.txt"):
                 nopiclink=link.split("[[")[-1][:-2] # remove initial '[[', and any picture/file text, and remove final ']]'
                 no_alias=nopiclink.split("|")[0] # take only the actual link, not what is displayed
                 if (no_alias[:9] == 'Category:'):
-                     categories.append(no_alias)
+                     categories.append(no_alias[9:])
                 else:
                     wikilinks.append(no_alias) #still leaves categories, pics/files with no wikilinks in caption, and subsections. Pics at least can be parsed out
             
@@ -76,7 +78,7 @@ def dump_parser(file="DdumpAlgebra.xml", txt_out="wikilinks1.txt"):
             #FOR NOW, write links unorganized to text file (LATER, SQL DATABASE PROBABLY)
                  
             for link in foot_links:
-                outfile.write("%s\n" % link)
+                outfile.write("%s\n" % link.encode('utf-8'))
             #stick data into pandas DataFrame (MAKE SURE IT WON'T GET TO BIG)      
             wiki_df.loc[i]=pd.Series({'title': title_text, 'wikilinks': wikilinks, 'categories': categories, 'footnotes':foot_links, 'num_feet': len(foot_links)})
 
