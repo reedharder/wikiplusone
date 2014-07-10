@@ -7,6 +7,7 @@ Created on Fri Jun 20 11:24:24 2014
 a module similar to iter_wiki, parsing links, isbn, arvix number, pmid, pmc, doi
 """
 #import pickle
+import op
 import os
 import re 
 import itertools
@@ -530,7 +531,7 @@ def iter_parse_xml(xml_file, parse_func=page_parser_plus, nskey=''):
     return  textdf
 
 
-#function to get count of certain item in dataframe, keyed by column names:
+#function to get count of certain item in dataframe returned by iter_wiki_xml using page_parser function (NOT page_parser_plus), keyed by column names:
 def get_item_count(textdf,item='links',returnlist=False):
     #get flattened list from specified columns
     unpackedlist=list(itertools.chain.from_iterable(textdf[item]))
@@ -541,11 +542,25 @@ def get_item_count(textdf,item='links',returnlist=False):
         return (num_items,unpackedlist)
     else: #otherwise just return number of items
         return num_items
-        
+
+
+#pass a comparison function from operator module as operator, and a dataframe of page_parser_plus type
+def numlinks_filter(df, operator,number=1):
+    #map len function to each row of links column, return if satisfies condition imposed by operator and number
+    outdf=df[operator(df['links'].map(len),number)] 
+    #return filtered dataframe
+    return outdf
+
+
+#keep only reasonable google domains in set of links (no random searches thank you) (will take DF, list or text file list)       
 def google_filter():
     pass        
 
-def archive_filer():
+# get google book ids from list of links ((will take DF, list or text file list)
+def google_book_grabber():
+    pass    
+
+def archive_filter():
     pass
 
 def domain_parser():
