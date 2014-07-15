@@ -147,7 +147,7 @@ def page_parser(elem, namespaces, comment_pattern, inline_pattern, outline_patte
         return {}
         
 # page parser with additional functionality (pmid, pmc, archive parsing, citation type, link category, etc.), can be passed to iter_wiki doi, with *args
-def page_parser_plus(elem, namespaces, comment_pattern, inline_pattern, outline_pattern, link_pattern, url_sub, doi_pattern, doi_sub, isbn_pattern, isbn_sub, extlink_pattern, type_pattern,type_sub,pmid_pattern,pmid_sub,pmc_pattern,pmc_sub,arxiv_pattern,arxiv_sub,eprint_pattern,eprint_sub, free_cites=True, free_links=True, include_nolinkpages=False ):  #namesoaces will have format: {'a':'http://www.mediawiki.org/xml/export-0.8/'}
+def page_parser_plus(elem, namespaces, comment_pattern, inline_pattern, outline_pattern, link_pattern, url_sub, doi_pattern, doi_sub, isbn_pattern, isbn_sub, extlink_pattern, type_pattern,type_sub,pmid_pattern,pmid_sub,pmc_pattern,pmc_sub,arxiv_pattern,arxiv_sub,eprint_pattern,eprint_sub,  archive_pattern,archive_sub,free_cites=True, free_links=True, include_nolinkpages=False ):  #namesoaces will have format: {'a':'http://www.mediawiki.org/xml/export-0.8/'}
     #loop through pages, extract and parse titles/wikitext    
     if int(elem.xpath('a:ns', namespaces=namespaces)[0].text) == 0: #if namespace indicates that this is a template
         #grab text of </title> and </text> nodes
@@ -163,13 +163,13 @@ def page_parser_plus(elem, namespaces, comment_pattern, inline_pattern, outline_
         re_footnote_refs=inline_pattern.findall(wiki_text)
         #initialize list of dictionaries, one for each citation/link within page
         link_or_citation_list=[]
-        
+        #initialize a reference count
+        refnum=0        
         #parsing refs with <ref/> tags, to be categorized as in_line references. At present, some older  historical styles, such as the footnote2 and footnote3 methods, are not parsed (see http://en.wikipedia.org/wiki/Wikipedia:Inline_citation)
         #At present, parenthetical citations will not be classed as inline citations because of the added overhead of identifying them as such across different citation templates
         #parenthical citations may instead be classed as free citations, provided that their anchor uses one of the common Citation templates        
         for ref in re_footnote_refs:
-            #initialize list of links
-            ref_links=[]            
+                   
                 
             #get type of citation if it exists
             try:
@@ -180,15 +180,24 @@ def page_parser_plus(elem, namespaces, comment_pattern, inline_pattern, outline_
                 ref_type=re.sub(type_sub,b'',ref_type).lstrip()            
         
             #pull out links from ref
-            singlereflinks=link_pattern.findall(ref)
-            for link in singlereflinks:
+            try: 
+                link = link_pattern.findall(ref)[0]
+            except IndexError:
+                link=b''
+            else:           
                 #remove end char
                 link=link[:-1]
                 #remove "url =" heading if it is there
-                if link[:3] == b'url':
+                if re.search(b'^|\s*url', link):
                     link = re.sub(url_sub,b'',link)
-                #append to list of links from ref
-                ref_links.append(link)
+            
+            #check for web archives in ref
+            archive= archive_pattern.findall(ref)
+            #if archive found, remove archive header
+            if len(archive)>0:
+                archive=re.sub(archive_sub, archive[0])
+            else:
+                archive=b''
                 
             #pull out dois from ref
             try:
@@ -261,11 +270,16 @@ def page_parser_plus(elem, namespaces, comment_pattern, inline_pattern, outline_
             elif ref_type.lower() == b'arxiv' and refeprint: # i.e. if type of cite is arxiv and eprint parameter exists...
                 arxiv=refeprint
             else:
-                arxiv=b''
+                arxiv=b''           
+                      
             
             #append data from ref to list of data from page
-            if len(ref_links)+len(isbn)+len(doi)+len(pmid)+len(pmc)+len(arxiv) > 0:
-                link_or_citation_list.append({'id':wiki_id,'title':title_text,'info_type':'inline_ref','ref_type':ref_type,'links':ref_links,'isbn':isbn,'doi':doi,'pmid':pmid,'pmc':pmc,'arxiv':arxiv})
+            if len(link)+len(isbn)+len(doi)+len(pmid)+len(pmc)+len(arxiv) > 0:
+                refnum=refnum+1 #increment ref count
+                link_or_citation_list.append({'id':wiki_id,'title':title_text,'info_type':'inline_ref','ref_type':ref_type,'refnum': refnum,'links':link,'isbn':isbn,'doi':doi,'pmid':pmid,'pmc':pmc,'arxiv':arxiv})
+            
+            if len(archive) > 0:
+                link_or_citation_list.append({'id':wiki_id,'title':title_text,'info_type':'inline_archive','ref_type':ref_type,'refnum': refnum,'links':archive,'isbn':isbn,'doi':doi,'pmid':pmid,'pmc':pmc,'arxiv':arxiv})
             
                         
         
@@ -280,8 +294,6 @@ def page_parser_plus(elem, namespaces, comment_pattern, inline_pattern, outline_
             #loop through refs
             for ref in re_free_refs: 
                 
-                #initialize list of links
-                free_cite_links=[]
                 #get type of citation if it exists
                 try:
                     ref_type=type_pattern.findall(ref)[0][:-1].rstrip().lower()
@@ -289,17 +301,26 @@ def page_parser_plus(elem, namespaces, comment_pattern, inline_pattern, outline_
                     ref_type=b''
                 else:
                     ref_type=re.sub(type_sub,b'',ref_type).lstrip()            
-            
+                
                 #pull out links from ref
-                reflinks=link_pattern.findall(ref)
-                for link in reflinks:
+                try: 
+                    link = link_pattern.findall(ref)[0]
+                except IndexError:
+                    link=b''
+                else:           
                     #remove end char
                     link=link[:-1]
                     #remove "url =" heading if it is there
-                    if link[:3] == b'url':
+                    if re.search(b'^|\s*url', link):
                         link = re.sub(url_sub,b'',link)
-                    #append to list of links from ref
-                    free_cite_links.append(link)
+                
+                #check for web archives in ref
+                archive= archive_pattern.findall(ref)
+                #if archive found, remove archive header
+                if len(archive)>0:
+                    archive=re.sub(archive_sub, archive[0])
+                else:
+                    archive=b''
                     
                 #pull out dois from ref
                 try:
@@ -374,11 +395,16 @@ def page_parser_plus(elem, namespaces, comment_pattern, inline_pattern, outline_
                 else:
                     arxiv=b''
                 
-                #add to data to list ADD THIS TO EARLIER THING, CHECK FOR EMPTY MATRIX except for wiki title then add blank_page to info_type and append a dict if desired, check for ALTERNATE DOI SETTINGS 
-                if len(free_cite_links)+len(isbn)+len(doi)+len(pmid)+len(pmc)+len(arxiv) > 0:
-                    link_or_citation_list.append({'id':wiki_id,'title':title_text,'info_type':'free_ref','ref_type':ref_type,'links':free_cite_links,'isbn':isbn,'doi':doi,'pmid':pmid,'pmc':pmc,'arxiv':arxiv})
+               
                 
-                    
+                #add to data to list ADD THIS TO EARLIER THING, CHECK FOR EMPTY MATRIX except for wiki title then add blank_page to info_type and append a dict if desired, check for ALTERNATE DOI SETTINGS 
+                if len(link)+len(isbn)+len(doi)+len(pmid)+len(pmc)+len(arxiv) > 0:
+                    refnum=refnum+1 #increment ref count
+                    link_or_citation_list.append({'id':wiki_id,'title':title_text,'info_type':'free_ref','ref_type':ref_type,'refnum': refnum,'links':link,'isbn':isbn,'doi':doi,'pmid':pmid,'pmc':pmc,'arxiv':arxiv})
+                #add archive if exists
+                if len(archive) > 0:
+                    link_or_citation_list.append({'id':wiki_id,'title':title_text,'info_type':'free_archive','ref_type':ref_type,'refnum': refnum,'links':archive,'isbn':isbn,'doi':doi,'pmid':pmid,'pmc':pmc,'arxiv':arxiv})
+                   
                     
         if free_links:
             #remove free citations from wikitext
@@ -389,7 +415,9 @@ def page_parser_plus(elem, namespaces, comment_pattern, inline_pattern, outline_
             extlinks=[x[:-1] for x in extlinks if x]
             #add links to list
             for free_link in extlinks:
-                link_or_citation_list.append({'id':wiki_id,'title':title_text,'info_type':'free_link','ref_type':b'','links':[free_link],'isbn':b'','doi':b'','pmid':b'','pmc':b'','arxiv':b''})
+                #increment ref count
+                refnum=refnum+1
+                link_or_citation_list.append({'id':wiki_id,'title':title_text,'info_type':'free_link','ref_type':b'','refnum': refnum,'links':free_link,'isbn':b'','doi':b'','pmid':b'','pmc':b'','arxiv':b''})
                               
            
            
@@ -397,7 +425,7 @@ def page_parser_plus(elem, namespaces, comment_pattern, inline_pattern, outline_
         pagedf=pd.DataFrame(link_or_citation_list)
         # if dataframe is not empty or         
         if not pagedf.any().any() and include_nolinkpages:
-            return [{'id':wiki_id,'title':title_text,'info_type':'no_links_refs','ref_type':b'','links':[b''],'isbn':b'','doi':b'','pmid':b'','pmc':b'','arxiv':b''}]
+            return [{'id':wiki_id,'title':title_text,'info_type':'no_links_refs','ref_type':b'','links':b'','isbn':b'','doi':b'','pmid':b'','pmc':b'','arxiv':b''}]
         elif pagedf.any().any(): 
             return link_or_citation_list
         else:
@@ -448,8 +476,10 @@ def iter_parse_xml(xml_file, parse_func=page_parser_plus, nskey=''):
         inline_pattern=re.compile(b'<ref.*?>.*?</ref>',re.DOTALL) #pattern for finding standard inline citation s
         outline_pattern=re.compile(b'\{\{\s*cite.*?\}\}|\{\{\s*Cite.*?\}\}|\{\{\s*wikicite.*?\}\}|\{\{\s*Citation.*?\}\}|\{\{\s*citation.*?\}\}',re.DOTALL) #pattern for finding other common citation templates that might be outside <ref> tags
         #PERHAPS ADD ARCHIVE SCRIPT FROM EARLIER, OR AS A LATER ARCHIVE PARSING FUNCTION
-        link_pattern=re.compile(b'(?<=\[)http://.*?[\s|\]"]|(?<=\[)https://.*?[\s|\"]]|(?<=\[)ftp://.*?[\s|\"]]|(?<=\[)//.*?[\s|\"]]|url\s*=\s*.*?[\s|}]', re.DOTALL) #pattern for finding any external links in citation template
-        url_sub=re.compile(b'url\s*=\s*') #pattern to remove 'url=' heading from links
+        link_pattern=re.compile(b'(?<=\[)http://.*?[\s|\]"]|(?<=\[)https://.*?[\s|\"]]|(?<=\[)ftp://.*?[\s|\"]]|(?<=\[)//.*?[\s|\"]]|\|\s*url\s*=\s*.*?[\s|}]', re.DOTALL) #pattern for finding any external links in citation template
+        url_sub=re.compile(b'\|\s*url\s*=\s*') #pattern to remove 'url=' heading from links
+        archive_pattern=re.compile(b'\|\s*archiveurl\s*=\s*.*?[\s|}]')
+        archive_sub=re.compile(b'\|\s*archiveurl\s*=\s*')        
         type_pattern=re.compile(b'\{\{\s*cite.*?[|}]|\{\{\s*Cite.*?[|}]',re.DOTALL) #pattern to find potential type of citation label in template, i.e. "Cite web" or "Cite Book"
         type_sub=re.compile(b'^\{\{\s*cite|^\{\{\s*Cite') #pattern to clean above finds down to just label
         doi_pattern=re.compile(b'doi\s*=\s*.*?[|\s}]',re.DOTALL) #pattern to find dois in citation templates
@@ -497,7 +527,7 @@ def iter_parse_xml(xml_file, parse_func=page_parser_plus, nskey=''):
             
         elif parse_func.__name__ == 'page_parser_plus':
             #pass args appropriate for page_parser_plus function
-            parse_args=[namespaces, comment_pattern, inline_pattern, outline_pattern, link_pattern, url_sub, doi_pattern, doi_sub, isbn_pattern, isbn_sub, extlink_pattern, type_pattern,type_sub,pmid_pattern,pmid_sub,pmc_pattern,pmc_sub,arxiv_pattern,arxiv_sub,eprint_pattern,eprint_sub]        
+            parse_args=[namespaces, comment_pattern, inline_pattern, outline_pattern, link_pattern, url_sub, doi_pattern, doi_sub, isbn_pattern, isbn_sub, extlink_pattern, type_pattern,type_sub,pmid_pattern,pmid_sub,pmc_pattern,pmc_sub,arxiv_pattern,arxiv_sub,eprint_pattern,eprint_sub, archive_pattern,archive_sub]        
             for event, elem in iter_tree: 
                #call parsing function on current page element
                 parsed_page=parse_func(elem, *parse_args) 
@@ -508,10 +538,12 @@ def iter_parse_xml(xml_file, parse_func=page_parser_plus, nskey=''):
                     ffull.extend(parsed_page)                
                     
                     #go through list of URLs for page
-                    for ref_or_link_dict in parsed_page:
-                        for link in ref_or_link_dict['links']:
+                    for ref_or_link_dict in parsed_page:                        
                         #write URL to txt file
-                            urltempfile.write(link + b'\n')                            
+                        try:
+                            urltempfile.write(ref_or_link_dict['links'] + b'\n') 
+                        except TypeError:
+                            print(ref_or_link_dict['links'])
 
                 #clear element
                 elem.clear()
@@ -604,18 +636,18 @@ def archive_filter():
 
 #takes link, returns netloc (minus port)
 def netloc_grabber(plusdf_row):
-    netlocs=[]
-    for link in plusdf_row['links']:    
-        if re.search(b'//',link):
-            #get netloc if it will most likely be valid (contains '//') clip potential port)
-            netloc=urlsplit(link)[1].split(b':')[0]
-        else:
-            netloc=b''
-        netlocs.append(netloc)
+    #get link from row    
+    link=plusdf_row['links']    
+    if re.search(b'//',link):
+        #get netloc if it will most likely be valid (contains '//') clip potential port)
+        netloc=urlsplit(link)[1].split(b':')[0]
+    else:
+        netloc=b''
+        
     #return urlparse's netlocs
-    return netlocs
+    return netloc
 
-#takes link, returns info about whether it might be an archive
+#DEPRECATED WITH PAGE_PARSER_PLUS()# #takes link, returns info about whether it might be an archive, #DEPRECATED WITH PAGE_PARSER_PLUS()#
 def archive_grabber(link_list):
     archives=[]
     for link in link_list:
@@ -647,65 +679,67 @@ def countrysufflist():
             
         
 #takes netloc (such as produced by netloc_grabber(), returns record of details about the domain
-def dom_details_grabber(netloc_list,psl,cclist):
-    records=[]
-    for netloc in netloc_list:
-        #read as string
-        netloc=netloc.decode('utf-8')
-        #get public suffix from list
-        ##psl=PublicSuffixList()
-        tldn=psl.get_public_suffix(netloc)    
-        #split domain
-        dom_list=tldn.split(".")
-        #get site name
-        dom=dom_list[0]
-        #attempt to get suffix details
-        try:
-            suff=tldn.split(".",1)[1]
-        except IndexError:
-            #simply take netloc as domain
-            tldn=netloc
-            suff=b''
-            majDom=b''
-        else:
-            # Check if suffix contains one of the major domains, else NULL
-            majBool=False
-            #check suffix fragments starting from end
-            for part in reversed(suff.split(".")):
-                if part in ['gov','edu','com','org']:
-                    majDom=part
-                    majBool=True
-                    break
-            if majBool==False:
-                majDom=''
-        #take last fragment of domain as a potential country code
-        ct_code=dom_list[-1]
-        #get parellel lists of country code top level domain and country
-        ##cclist=countrysufflist()
-        #search for country code, if successful report name, else NULL    
-        try:
-            ind=cclist[0].index("."+ct_code)
-            ct_name=cclist[1][ind]
-        except ValueError:
-            ct_name=''
-            ct_code=''
-        records.append((tldn,dom,suff,ct_code,ct_name,majDom))   
-    #return record, with following indices:
-    #0 = domain
-    #1 = site name
-    #2 = public suffix 
-    #3 = country code
-    #4 = country name
-    #5 = major domain (com, edu, gov, org)
-    if len(records)==0:
-        records.append(('','','','','',''))
-    return records
+def dom_details_grabber(netloc,psl,cclist): 
+    #read as string
+    netloc=netloc.decode('utf-8')
+    #get domain
+    tldn=psl.get_public_suffix(netloc)    
+    #split domain
+    dom_list=tldn.split(".")
+    #get site name
+    dom=dom_list[0]
+    #attempt to get suffix details
+    try:
+        suff=tldn.split(".",1)[1]
+    except IndexError:
+        #simply take netloc as domain
+        tldn=netloc
+        suff=b''
+        majDom=b''
+    else:
+        # Check if suffix contains one of the major domains, else NULL
+        majBool=False
+        #check suffix fragments starting from end
+        for part in reversed(suff.split(".")):
+            if part in ['gov','edu','com','org']:
+                majDom=part
+                majBool=True
+                break
+        if majBool==False:
+            majDom=''
+    #take last fragment of domain as a potential country code
+    ct_code=dom_list[-1]
+    #search for country code, if successful report name, else NULL    
+    try:
+        ind=cclist[0].index("."+ct_code)
+        ct_name=cclist[1][ind]
+    except ValueError:
+        ct_name=''
+        ct_code=''
+    record={"domain": tldn,"site_name": dom,"pub_suff":suff,"country_code":ct_code,"country":ct_name,"major_dom":majDom}
+    #dict with keys:
+    #domain = domain
+    #site_name = site name
+    #pub_suff = public suffix 
+    #country_code = country code
+    #country = country name
+    #major_dom = major domain (com, edu, gov, org)    
+    return record
             
 
 
 #takes page_parser_plus dataframe, returns selected domain related fields
-def domain_parser(df, field_list=['netloc','domain','site_name','public_suffix','MajorDomain','country','count','archive']):
-     pass
+def domain_parser(df, field_list=["wiki_id","netloc","domain","site_name","pub_suff","country_code","country","major_dom"]):
+     #get netlocs
+     nts=df.apply(netloc_grabber,axis=1)
+    #get country code list and public suffix list     
+     cclist=countrysufflist()
+     psl=PublicSuffixList()
+     #get dom data from netlocs
+     domdata=nts.apply(dom_details_grabber, args=(psl,cclist))
+     
+     return domdata
+     
  #tomorrow, use merged results to get google filter ( use big booloean?) and and dataframe from here, then, list of links
      '''
      
