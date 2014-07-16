@@ -14,6 +14,7 @@ import itertools
 from urllib.parse import urlparse, urlsplit
 from publicsuffix import PublicSuffixList 
 #import csv
+import numpy as np
 import pandas as pd
 from lxml import etree
 #from collections import Counter
@@ -195,7 +196,7 @@ def page_parser_plus(elem, namespaces, comment_pattern, inline_pattern, outline_
             archive= archive_pattern.findall(ref)
             #if archive found, remove archive header
             if len(archive)>0:
-                archive=re.sub(archive_sub, archive[0])
+                archive=re.sub(archive_sub, b'',archive[0])
             else:
                 archive=b''
                 
@@ -318,7 +319,7 @@ def page_parser_plus(elem, namespaces, comment_pattern, inline_pattern, outline_
                 archive= archive_pattern.findall(ref)
                 #if archive found, remove archive header
                 if len(archive)>0:
-                    archive=re.sub(archive_sub, archive[0])
+                    archive=re.sub(archive_sub,b'', archive[0])
                 else:
                     archive=b''
                     
@@ -590,48 +591,55 @@ def numlinks_filter(df,op,number=1):
 #helper function for google filter below, takes row of merged dataframe in google filter, will return row index if link is a google link not in one of the safe categories
 def get_goog_ind(bigdf_row, safedomains):
     #if site name is google, check if it is a desired subdomain
-    try:
-        sitename=bigdf_row['domdata'][1]
-    except IndexError:
-        return None
-    else:
-        if sitename=='google':
-            spliturl=urlsplit(bigdf_row['links'][0].decode('utf-8')) #split first link of row into components
-            #if first part of netloc or first part path is a safedomain, keep link        
-            if spliturl[1].split(".")[0] in safedomains or spliturl[2].split("/")[1] in safedomains:
-                return None
-            else:
-                return bigdf_row['index1']
-    
-        else: 
+    sitename=bigdf_row['site_name']
+    if sitename==b'google':
+        spliturl=urlsplit(bigdf_row['links'].decode('utf-8')) #split first link of row into components
+        #if first part of netloc or first part path is a safedomain, keep link        
+        if spliturl[1].split(".")[0] in safedomains or spliturl[2].split("/")[1] in safedomains:
             return None
+        else:
+            return bigdf_row['index']
+    else: 
+        return None
     
     
-#keep only reasonable google domains in set of links (no random searches thank you) (will take DF from page_parser_plus, and df of domain data as output by dom_details_grabber  
+#keep only reasonable google domains in set of links (no random searches thank you) (will take DF from page_parser_plus or any other dataframe with a column of links, and a corresponding df of domain data as output by domain_parser, or another df contain the sitename of each link and index as a column
 #urllistsource takes list of link strings
 #custom filter will take a list of desired google subdomains, if 'default', use built-in list
-def google_filter(plusdf, domdata, custom_filter='default'):
+def google_filter(plusdf, domdf, custom_filter='default'):
     #set up list of domains to save
     if custom_filter=='default':
         safedomains=["about","corporate","events","finance","gwt","help","insights","logos","intl","pacman","patents","press","publicdata","support","trends","webmaster"]
     else:
-        safedomains=custom_filter
-    #merge domdata with citation data    
-    domdata.name='domdata'
-    bigdf=pd.concat([plusdf,pd.DataFrame(domdata)])
-    bigdf['index1']=bigdf.index
+        safedomains=custom_filter      
+    #merge dataframe
+    bigdf=pd.concat([plusdf,domdf], axis=1)    
     #get vector of row indices to drop
     dropvals=bigdf.apply(get_goog_ind, axis=1, args=(safedomains,)).dropna()
     
-    return bigdf.drop(dropvals)       
+    return dropvals   # then can do bigdf.drop(dropvals), etc.       
 
-# get google book ids from list of links ((will take DF, list or text file list)
-def google_book_grabber():
-    pass    
-
-def archive_filter():
-    pass
-
+# get google book id from a link, and optionally a domain
+def get_google_book_id(df_row,book_url_pattern,idpattern):    
+    link=df_row['links']
+    #check for google books
+    if book_url_pattern.search(link):        
+        googbook_id=idpattern.findall(link.split(b'&')[0])[0]        
+    else:
+        googbook_id=np.NaN
+    return googbook_id
+        
+        
+# get column of google book ids from page_parser_plus() df
+def gbook_id_grabber(df):
+    #compile relevant regex patterns for getting google books links and google books ids, respectively
+    book_url_pattern=re.compile(b'://books\.google.*?books\?id') #TEST WITH THIS NEW EDIT
+    idpattern=re.compile(b'(?<=books\?id=).*?\Z')
+    #get column by applying appropriate function to df
+    bookid_col=df.apply(get_google_book_id, args=(book_url_pattern,idpattern))
+    bookid_col.name='gbook_id'
+    #return one column data frame of google book ids, indexed to origial df
+    return pd.DataFrame(bookid_col)
 #FUNCTIONS FOR MORE DETAILED PARSING OF URLS
 
 #takes link, returns netloc (minus port)
@@ -694,8 +702,8 @@ def dom_details_grabber(netloc,psl,cclist):
     except IndexError:
         #simply take netloc as domain
         tldn=netloc
-        suff=b''
-        majDom=b''
+        suff=''
+        majDom=''
     else:
         # Check if suffix contains one of the major domains, else NULL
         majBool=False
@@ -716,7 +724,7 @@ def dom_details_grabber(netloc,psl,cclist):
     except ValueError:
         ct_name=''
         ct_code=''
-    record={"domain": tldn,"site_name": dom,"pub_suff":suff,"country_code":ct_code,"country":ct_name,"major_dom":majDom}
+    record={"domain": tldn.encode('utf-8'),"site_name": dom.encode('utf-8'),"pub_suff":suff.encode('utf-8'),"country_code":ct_code.encode('utf-8'),"country":ct_name.encode('utf-8'),"major_dom":majDom.encode('utf-8')}
     #dict with keys:
     #domain = domain
     #site_name = site name
@@ -729,88 +737,26 @@ def dom_details_grabber(netloc,psl,cclist):
 
 
 #takes page_parser_plus dataframe, returns selected domain related fields
-def domain_parser(df, field_list=["wiki_id","netloc","domain","site_name","pub_suff","country_code","country","major_dom"]):
+def domain_parser(df, field_list=["index","netloc","domain","site_name","pub_suff","country_code","country","major_dom"]):
      #get netlocs
-     nts=df.apply(netloc_grabber,axis=1)
+     nts=df.apply(netloc_grabber,axis=1)     
+     nts.name='netloc' #name column
     #get country code list and public suffix list     
      cclist=countrysufflist()
      psl=PublicSuffixList()
      #get dom data from netlocs
      domdata=nts.apply(dom_details_grabber, args=(psl,cclist))
+     #get index as dataFrame and optional column
+     original_ind=df.index
+     original_ind.name='index'
+     original_ind=pd.DataFrame(original_ind)
+     #merge data (wiki id, )
+     mergedf=pd.concat([original_ind,pd.DataFrame(nts),pd.DataFrame(domdata.tolist())], axis=1)
+
+     return mergedf[field_list]
      
-     return domdata
-     
- #tomorrow, use merged results to get google filter ( use big booloean?) and and dataframe from here, then, list of links
-     '''
-     
-     #check if potential web archive, parse URL, get DOMAIN
-            if re.search('//',link.decode('utf-8')):
-                slashsplit=link.decode('utf-8').split("http://")
-                if len(slashsplit)<=2:
-                    dom=urlparse(link.decode('utf-8')).netloc.split(':')[0].encode('utf-8')
-                    archive=b'NULL'
-                elif len(slashsplit)==3:
-                    dom=urlparse(link.decode('utf-8')).netloc.split(':')[0].encode('utf-8')
-                    archive=urlparse('//'.join([slashsplit[0],slashsplit[1]])).netloc.encode('utf-8')
-                elif len(slashsplit)>3:
-                    dom=urlparse(link.decode('utf-8')).netloc.split(':')[0].encode('utf-8')
-                    archive=b'UNKNOWN_MULTI_HTTP'                            
-            else:
-                dom=b"STRANGE_OR_BROKEN_LINK"
-                archive=b"NULL"
-    
-    if len(parsed_page['ext_links'])>0:
-    					#initialize domain lists
-        dom_aggr=[]
-        dom_googsplit=[]
-                            #google  books pattern
-        pattern=re.compile(b'://books\.google.*?books\?id') #TEST WITH THIS NEW EDIT
-        for link in parsed_page['ext_links']:
-                                 
-            #add to index
-            index=index+1
-            #check for google books
-            if pattern.search(link):
-                idpattern=re.compile(b'(?<=books\?id=).*?\Z') 
-                googbook_id=idpattern.findall(link.split(b'&')[0])[0]
-                book_dom=link.split(b'&')[0]
-                book_full_id_list.append(googbook_id)
-            else:
-                googbook_id=b'NULL'
-                book_dom=0
-            
-            #check if potential web archive, parse URL, get DOMAIN
-            if re.search('//',link.decode('utf-8')):
-                slashsplit=link.decode('utf-8').split("http://")
-                if len(slashsplit)<=2:
-                    dom=urlparse(link.decode('utf-8')).netloc.split(':')[0].encode('utf-8')
-                    archive=b'NULL'
-                elif len(slashsplit)==3:
-                    dom=urlparse(link.decode('utf-8')).netloc.split(':')[0].encode('utf-8')
-                    archive=urlparse('//'.join([slashsplit[0],slashsplit[1]])).netloc.encode('utf-8')
-                elif len(slashsplit)>3:
-                    dom=urlparse(link.decode('utf-8')).netloc.split(':')[0].encode('utf-8')
-                    archive=b'UNKNOWN_MULTI_HTTP'                            
-            else:
-                dom=b"STRANGE_OR_BROKEN_LINK"
-                archive=b"NULL"
-                
-            #add doms to list for page                           
-            dom_aggr.append(dom)
-            #if link is google book, add URL all the way to end of id to split domain list
-            if book_dom == 0:
-                dom_googsplit.append(dom)
-            else:
-                dom_googsplit.append(book_dom)
-            #fill full file row:
-            #['index','title','wiki_id','num_links', 'url','domain','book_id','archive']
-            row=[index,parsed_page['title'],parsed_page['wiki_id'],parsed_page['num_links'],link,dom,googbook_id,archive]
-            ffull.writerow(row)
-            
-            #write URL to txt file
-            urltxtfile.write(link + b'\n')
-   
-'''
+
+ 
     
 def wiki_to_sql():
     pass
