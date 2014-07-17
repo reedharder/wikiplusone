@@ -11,7 +11,7 @@ import operator
 import os
 import re 
 import itertools
-from urllib.parse import urlparse, urlsplit
+from urllib.parse import urlparse, urlsplit, quote
 from publicsuffix import PublicSuffixList 
 #import csv
 import numpy as np
@@ -645,12 +645,12 @@ def gbook_id_grabber(df):
 #takes link, returns netloc (minus port)
 def netloc_grabber(plusdf_row):
     #get link from row    
-    link=plusdf_row['links']    
-    if re.search(b'//',link):
+    link=plusdf_row['url']
+    if re.search('//',link):
         #get netloc if it will most likely be valid (contains '//') clip potential port)
-        netloc=urlsplit(link)[1].split(b':')[0]
+        netloc=urlsplit(link)[1].split(':')[0]
     else:
-        netloc=b''
+        netloc=''
         
     #return urlparse's netlocs
     return netloc
@@ -724,7 +724,7 @@ def dom_details_grabber(netloc,psl,cclist):
     except ValueError:
         ct_name=''
         ct_code=''
-    record={"domain": tldn.encode('utf-8'),"site_name": dom.encode('utf-8'),"pub_suff":suff.encode('utf-8'),"country_code":ct_code.encode('utf-8'),"country":ct_name.encode('utf-8'),"major_dom":majDom.encode('utf-8')}
+    record={"domain": tldn,"site_name": dom,"pub_suff":suff,"country_code":ct_code,"country":ct_name,"major_dom":majDom}
     #dict with keys:
     #domain = domain
     #site_name = site name
@@ -733,11 +733,25 @@ def dom_details_grabber(netloc,psl,cclist):
     #country = country name
     #major_dom = major domain (com, edu, gov, org)    
     return record
-            
-
-
+    
+#check if valid url, if so convert to unicode string, else mark as invalid  
+def link_clean(link_row):    
+    link=link_row['links']
+    try:
+        urlsplit(link)
+    except ValueError:
+        clean_link='BROKEN'
+    else:
+        clean_link=link.decode("utf-8")
+    return clean_link
+    
 #takes page_parser_plus dataframe, returns selected domain related fields
-def domain_parser(df, field_list=["index","netloc","domain","site_name","pub_suff","country_code","country","major_dom"]):
+def domain_parser(df, field_list=["index","url","netloc","domain","site_name","pub_suff","country_code","country","major_dom"]):
+    #check if valid url, if so convert to unicode string, else mark as invalid, temporarily add to input DataFrame
+     url=df.apply(link_clean, axis=1)
+     url.name='url'
+     urldf=pd.DataFrame(url)
+     df['url']=urldf
      #get netlocs
      nts=df.apply(netloc_grabber,axis=1)     
      nts.name='netloc' #name column
@@ -751,7 +765,7 @@ def domain_parser(df, field_list=["index","netloc","domain","site_name","pub_suf
      original_ind.name='index'
      original_ind=pd.DataFrame(original_ind)
      #merge data (wiki id, )
-     mergedf=pd.concat([original_ind,pd.DataFrame(nts),pd.DataFrame(domdata.tolist())], axis=1)
+     mergedf=pd.concat([original_ind,urldf,pd.DataFrame(nts),pd.DataFrame(domdata.tolist())], axis=1)
 
      return mergedf[field_list]
      
