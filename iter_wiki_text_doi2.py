@@ -147,6 +147,36 @@ def page_parser(elem, namespaces, comment_pattern, inline_pattern, outline_patte
     else: # if not a standard wiki page, signal this by returning empty series
         return {}
         
+#take 10 digit isbn, return true if passes digit check, false if not      
+def isbn10_checkdig(isbn):
+    isbn=isbn.decode('utf-8')    
+    checkdig=isbn[-1]
+    if checkdig == 'X':
+        checkdig = 10
+    else: checkdig = int(checkdig)
+    #get appropiate dot product
+    dotprod=sum([x*int(y) for x, y in zip(reversed(range(2,11)),list(isbn)[:-1])])
+    mod=dotprod%11
+    #confirm checkdig
+    if 11-mod == checkdig:
+        return True
+    else:
+        return False
+
+#take 13 digit isbn, return true if passes digit check, false if not
+def isbn13_checkdig(isbn):
+    isbn=isbn.decode('utf-8')     
+    checkdig=int(isbn[-1])    
+    #get appropiate dot product
+    dotprod=sum([x*int(y) for x, y in zip(itertools.cycle([1,3]),list(isbn)[:-1])])
+    mod=dotprod%10
+    #confirm checkdig
+    if 10-mod == checkdig:
+        return True
+    else:
+        return False
+
+        
 # page parser with additional functionality (pmid, pmc, archive parsing, citation type, link category, etc.), can be passed to iter_wiki doi, with *args
 def page_parser_plus(elem, namespaces, comment_pattern, inline_pattern, outline_pattern, link_pattern, url_sub, doi_pattern, doi_sub, isbn_pattern, isbn_sub, extlink_pattern, type_pattern,type_sub,pmid_pattern,pmid_sub,pmc_pattern,pmc_sub,arxiv_pattern,arxiv_sub,eprint_pattern,eprint_sub,  archive_pattern,archive_sub,free_cites=True, free_links=True, include_nolinkpages=False ):  #namesoaces will have format: {'a':'http://www.mediawiki.org/xml/export-0.8/'}
     #loop through pages, extract and parse titles/wikitext    
@@ -232,15 +262,31 @@ def page_parser_plus(elem, namespaces, comment_pattern, inline_pattern, outline_
                 #remove end char
                 isbn=isbn[:-1]
                 #remove "isbn =" heading
-                isbn=re.sub(isbn_sub,b'',isbn)
+                isbn=re.sub(isbn_sub,b'',isbn)    
                 #take the first isbn given
-                isbn=isbn.split(b',')[0]                
+                isbn=isbn.split(b',')[0] #PERHAPS SPLIT ONANYTHIG BESIDES SPACE DASH BUMBER X WHATEVER
                 #remove invalid ISBN characters
                 if re.search(b'^ASIN|^SBN|^L.C.',isbn): # if string contains another common book id, save it with that label
                     isbn=re.sub(b'[^0-9ASINBLC.:]',b'',isbn)
+                    isbn=b'ALT_ID_'+isbn #Mark as alternate
                 else: #otherwise, just remove all non valid ISBN characters
-                    isbn=re.sub(b'[^0-9X]',b'',isbn)
-                
+                    isbn=re.sub(b'[^0-9X]',b'',isbn)                    
+                    if (len(isbn) > 13) and (isbn[:3]==978 or isbn[:3]==979):  #check if string contains 13-isbn prefix                        
+                        isbn=isbn[:13]
+                    elif len(isbn) > 10 and len(isbn) != 13:
+                        isbn=isbn[:10]
+                    if isbn==b'': #check if empty
+                        isbn=b'INVALID_NO_ISBN_CHARS'
+                    elif len(isbn) < 10: #if less than ten, invalid
+                        isbn = b'INVALID_TOO_FEW_DIG'       
+                    if len(isbn) == 13 and re.search(b'X',isbn):
+                        isbn=isbn[:10]
+                    if len(isbn) == 10 and not isbn10_checkdig(isbn):#mark as invalid if isbn 
+                        isbn = b'INVALID_FAILED_10CHECKDIG'                    
+                    if len(isbn) == 13 and not isbn13_checkdig(isbn): #mark as invalid if isbn 
+                        
+                        isbn = b'INVALID_FAILED_13CHECKDIG'
+                            
             
             #pull out pmids from ref
             try:
@@ -375,13 +421,22 @@ def page_parser_plus(elem, namespaces, comment_pattern, inline_pattern, outline_
                         isbn=re.sub(b'[^0-9ASINBLC.:]',b'',isbn)
                         isbn=b'ALT_ID_'+isbn #Mark as alternate
                     else: #otherwise, just remove all non valid ISBN characters
-                        isbn=re.sub(b'[^0-9X]',b'',isbn)
-                        if isbn==b'':
-                            isbn=b'INVALID_NO_ISBN_CHARS'
-                        if (len(isbn) > 23) and (isbn[:3]==978 or isbn[:3]==979):
+                        isbn=re.sub(b'[^0-9X]',b'',isbn)                        
+                        if (len(isbn) > 13) and (int(isbn[:3])==978 or int(isbn[:3])==979): #check if string contains 13-isbn prefix
                             isbn=isbn[:13]
-                        elif len(isbn) > 10:
+                        elif len(isbn) > 10 and len(isbn) != 13:
                             isbn=isbn[:10]
+                        if isbn==b'': #check if empty
+                            isbn=b'INVALID_NO_ISBN_CHARS'
+                        elif len(isbn) < 10: #if less than ten, invalid
+                            isbn = b'INVALID_TOO_FEW_DIG'
+                        if len(isbn) == 13 and re.search(b'X',isbn):
+                            isbn=isbn[:10]
+                        if len(isbn) == 10 and not isbn10_checkdig(isbn): #mark as invalid if isbn 
+                            isbn = b'INVALID_FAILED_10CHECKDIG'                        
+                        if len(isbn) == 13 and not isbn13_checkdig(isbn): #mark as invalid if isbn 
+                            isbn = b'INVALID_FAILED_13CHECKDIG'                       
+                            
                         
                         
                         
@@ -513,7 +568,7 @@ def iter_parse_xml(xml_file, parse_func=page_parser_plus, nskey=''):
         inline_pattern=re.compile(b'<ref.*?>.*?</ref>',re.DOTALL) #pattern for finding standard inline citation s
         outline_pattern=re.compile(b'\{\{\s*cite.*?\}\}|\{\{\s*Cite.*?\}\}|\{\{\s*wikicite.*?\}\}|\{\{\s*Citation.*?\}\}|\{\{\s*citation.*?\}\}',re.DOTALL) #pattern for finding other common citation templates that might be outside <ref> tags
         #PERHAPS ADD ARCHIVE SCRIPT FROM EARLIER, OR AS A LATER ARCHIVE PARSING FUNCTION
-        link_pattern=re.compile(b'(?<=\[)http://.*?[\s|\]"]|(?<=\[)https://.*?[\s|\"]]|(?<=\[)ftp://.*?[\s|\"]]|(?<=\[)//.*?[\s|\"]]|\|\s*url\s*=\s*.*?[\s|}]', re.DOTALL) #pattern for finding any external links in citation template
+        link_pattern=re.compile(b'(?<=\[)http://.*?[\s|\]"]|(?<=\[)https://.*?[\s|\]"]|(?<=\[)ftp://.*?[\s|\]"]|(?<=\[)//.*?[\s|\]"]|\|\s*url\s*=\s*.*?[\s|}]', re.DOTALL) #pattern for finding any external links in citation template
         url_sub=re.compile(b'\|\s*url\s*=\s*') #pattern to remove 'url=' heading from links
         archive_pattern=re.compile(b'\|\s*archiveurl\s*=\s*.*?[\s|}]')
         archive_sub=re.compile(b'\|\s*archiveurl\s*=\s*')        
@@ -531,7 +586,7 @@ def iter_parse_xml(xml_file, parse_func=page_parser_plus, nskey=''):
         eprint_sub=re.compile(b'\|eprint=')         
         isbn_pattern=re.compile(b'\|isbn=.*?[|}]',re.DOTALL)
         isbn_sub=re.compile(b'\|isbn=')
-        extlink_pattern=re.compile(b'(?<=\[)http://.*?[\s|\]"]|(?<=\[)https://.*?[\s|\"]]|(?<=\[)ftp://.*?[\s|\"]]|(?<=\[)//.*?[\s|\"]]',re.DOTALL) # pattern for finding external links not found in templates
+        extlink_pattern=re.compile(b'(?<=\[)http://.*?[\s|\]"]|(?<=\[)https://.*?[\s|\]"]|(?<=\[)ftp://.*?[\s|\]"]|(?<=\[)//.*?[\s|\]"]',re.DOTALL) # pattern for finding external links not found in templates
         
         #depending on parse function, modify behavior of iter_parse_xml           
         if parse_func.__name__=='page_parser':
@@ -658,6 +713,10 @@ def google_filter(domdf, custom_filter='default'):
     dropvals=domdf.apply(get_goog_ind, axis=1, args=(safedomains,)).dropna()
     
     return dropvals   # then can do bigdf.drop(dropvals), etc.       
+
+
+## USE: urlswanted=domisbdf['url'].drop(dropvals).replace('',np.NaN).replace('BROKEN',np.NaN).dropna()
+
 
 # get google book id from a link, and optionally a domain
 def get_google_book_id(df_row,book_url_pattern,idpattern):    
