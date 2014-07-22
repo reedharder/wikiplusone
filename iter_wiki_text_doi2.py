@@ -13,6 +13,7 @@ import re
 import itertools
 from urllib.parse import urlparse, urlsplit, quote
 from publicsuffix import PublicSuffixList 
+import numpy as np
 #import csv
 import numpy as np
 import pandas as pd
@@ -176,6 +177,14 @@ def isbn13_checkdig(isbn):
     else:
         return False
 
+#element wise function to remove invalid/alternate isbns (as marked by page_parse_plus()) from a list        
+def isbn_alt_inv_remove(isbn):
+    if re.search('^ALT',isbn) or re.search('^INVALID',isbn):
+        return False
+    else:
+        return True
+    
+
         
 # page parser with additional functionality (pmid, pmc, archive parsing, citation type, link category, etc.), can be passed to iter_wiki doi, with *args
 def page_parser_plus(elem, namespaces, comment_pattern, inline_pattern, outline_pattern, link_pattern, url_sub, doi_pattern, doi_sub, isbn_pattern, isbn_sub, extlink_pattern, type_pattern,type_sub,pmid_pattern,pmid_sub,pmc_pattern,pmc_sub,arxiv_pattern,arxiv_sub,eprint_pattern,eprint_sub,  archive_pattern,archive_sub,free_cites=True, free_links=True, include_nolinkpages=False ):  #namesoaces will have format: {'a':'http://www.mediawiki.org/xml/export-0.8/'}
@@ -223,10 +232,11 @@ def page_parser_plus(elem, namespaces, comment_pattern, inline_pattern, outline_
                     link = re.sub(url_sub,b'',link)
             
             #check for web archives in ref
-            archive= archive_pattern.findall(ref)
+            archives= archive_pattern.findall(ref)
             #if archive found, remove archive header
-            if len(archive)>0:
-                archive=re.sub(archive_sub, b'',archive[0])
+            if len(archives)>0:
+                archive=archives[0][:-1]
+                archive=re.sub(archive_sub, b'',archive)
             else:
                 archive=b''
             
@@ -278,14 +288,14 @@ def page_parser_plus(elem, namespaces, comment_pattern, inline_pattern, outline_
                     if isbn==b'': #check if empty
                         isbn=b'INVALID_NO_ISBN_CHARS'
                     elif len(isbn) < 10: #if less than ten, invalid
-                        isbn = b'INVALID_TOO_FEW_DIG'       
+                        isbn = b'INVALID_TOO_FEW_DIG_' + isbn      
                     if len(isbn) == 13 and re.search(b'X',isbn):
                         isbn=isbn[:10]
                     if len(isbn) == 10 and not isbn10_checkdig(isbn):#mark as invalid if isbn 
-                        isbn = b'INVALID_FAILED_10CHECKDIG'                    
+                        isbn = b'INVALID_FAILED_10CHECKDIG_' +isbn                   
                     if len(isbn) == 13 and not isbn13_checkdig(isbn): #mark as invalid if isbn 
                         
-                        isbn = b'INVALID_FAILED_13CHECKDIG'
+                        isbn = b'INVALID_FAILED_13CHECKDIG_' + isbn
                             
             
             #pull out pmids from ref
@@ -335,10 +345,10 @@ def page_parser_plus(elem, namespaces, comment_pattern, inline_pattern, outline_
             #append data from ref to list of data from page
             if len(link)+len(isbn)+len(doi)+len(pmid)+len(pmc)+len(arxiv) > 0:
                 refnum=refnum+1 #increment ref count
-                link_or_citation_list.append({'id':wiki_id,'title':title_text,'info_type':'inline_ref','ref_type':ref_type,'refnum': refnum,'links':link,'isbn':isbn,'doi':doi,'pmid':pmid,'pmc':pmc,'arxiv':arxiv})
+                link_or_citation_list.append({'id':wiki_id,'title':title_text,'info_type':'inline_ref','ref_type':ref_type.rstrip(),'refnum': refnum,'links':link.rstrip(),'isbn':isbn.rstrip(),'doi':doi.rstrip(),'pmid':pmid.rstrip(),'pmc':pmc.rstrip(),'arxiv':arxiv.rstrip()})
             
             if len(archive) > 0:
-                link_or_citation_list.append({'id':wiki_id,'title':title_text,'info_type':'inline_archive','ref_type':ref_type,'refnum': refnum,'links':archive,'isbn':isbn,'doi':doi,'pmid':pmid,'pmc':pmc,'arxiv':arxiv})
+                link_or_citation_list.append({'id':wiki_id,'title':title_text,'info_type':'inline_archive','ref_type':ref_type.rstrip(),'refnum': refnum,'links':archive.rstrip(),'isbn':isbn.rstrip(),'doi':doi.rstrip(),'pmid':pmid.rstrip(),'pmc':pmc.rstrip(),'arxiv':arxiv.rstrip()})
             
                         
         
@@ -374,10 +384,11 @@ def page_parser_plus(elem, namespaces, comment_pattern, inline_pattern, outline_
                         link = re.sub(url_sub,b'',link)
                 
                 #check for web archives in ref
-                archive= archive_pattern.findall(ref)
+                archives= archive_pattern.findall(ref)
                 #if archive found, remove archive header
-                if len(archive)>0:
-                    archive=re.sub(archive_sub, b'',archive[0])
+                if len(archives)>0:
+                    archive=archives[0][:-1]
+                    archive=re.sub(archive_sub, b'',archive)
                 else:
                     archive=b''
                 
@@ -429,19 +440,17 @@ def page_parser_plus(elem, namespaces, comment_pattern, inline_pattern, outline_
                         if isbn==b'': #check if empty
                             isbn=b'INVALID_NO_ISBN_CHARS'
                         elif len(isbn) < 10: #if less than ten, invalid
-                            isbn = b'INVALID_TOO_FEW_DIG'
+                            isbn = b'INVALID_TOO_FEW_DIG_' + isbn
                         if len(isbn) == 13 and re.search(b'X',isbn):
                             isbn=isbn[:10]
                         if len(isbn) == 10 and not isbn10_checkdig(isbn): #mark as invalid if isbn 
-                            isbn = b'INVALID_FAILED_10CHECKDIG'                        
+                            isbn = b'INVALID_FAILED_10CHECKDIG_' + isbn                         
                         if len(isbn) == 13 and not isbn13_checkdig(isbn): #mark as invalid if isbn 
-                            isbn = b'INVALID_FAILED_13CHECKDIG'                       
-                            
+                            isbn = b'INVALID_FAILED_13CHECKDIG_' + isbn                    
+                                                
                         
                         
-                        
-                        
-                            
+                                                  
                     
                 
                 #pull out pmids from ref
@@ -492,10 +501,10 @@ def page_parser_plus(elem, namespaces, comment_pattern, inline_pattern, outline_
                 #add to data to list ADD THIS TO EARLIER THING, CHECK FOR EMPTY MATRIX except for wiki title then add blank_page to info_type and append a dict if desired, check for ALTERNATE DOI SETTINGS 
                 if len(link)+len(isbn)+len(doi)+len(pmid)+len(pmc)+len(arxiv) > 0:
                     refnum=refnum+1 #increment ref count
-                    link_or_citation_list.append({'id':wiki_id,'title':title_text,'info_type':'free_ref','ref_type':ref_type,'refnum': refnum,'links':link,'isbn':isbn,'doi':doi,'pmid':pmid,'pmc':pmc,'arxiv':arxiv})
+                    link_or_citation_list.append({'id':wiki_id,'title':title_text,'info_type':'free_ref','ref_type':ref_type.rstrip(),'refnum': refnum,'links':link.rstrip(),'isbn':isbn.rstrip(),'doi':doi.rstrip(),'pmid':pmid.rstrip(),'pmc':pmc.rstrip(),'arxiv':arxiv.rstrip()})
                 #add archive if exists
                 if len(archive) > 0:
-                    link_or_citation_list.append({'id':wiki_id,'title':title_text,'info_type':'free_archive','ref_type':ref_type,'refnum': refnum,'links':archive,'isbn':isbn,'doi':doi,'pmid':pmid,'pmc':pmc,'arxiv':arxiv})
+                    link_or_citation_list.append({'id':wiki_id,'title':title_text,'info_type':'free_archive','ref_type':ref_type.rstrip(),'refnum': refnum,'links':archive.rstrip(),'isbn':isbn.rstrip(),'doi':doi.rstrip(),'pmid':pmid.rstrip(),'pmc':pmc,'arxiv':arxiv.rstrip()})
                    
                     
         if free_links:
@@ -509,7 +518,7 @@ def page_parser_plus(elem, namespaces, comment_pattern, inline_pattern, outline_
             for free_link in extlinks:
                 #increment ref count
                 refnum=refnum+1
-                link_or_citation_list.append({'id':wiki_id,'title':title_text,'info_type':'free_link','ref_type':b'','refnum': refnum,'links':free_link,'isbn':b'','doi':b'','pmid':b'','pmc':b'','arxiv':b''})
+                link_or_citation_list.append({'id':wiki_id,'title':title_text,'info_type':'free_link','ref_type':b'','refnum': refnum,'links':free_link.rstrip(),'isbn':b'','doi':b'','pmid':b'','pmc':b'','arxiv':b''})
                               
            
            
@@ -568,7 +577,7 @@ def iter_parse_xml(xml_file, parse_func=page_parser_plus, nskey=''):
         inline_pattern=re.compile(b'<ref.*?>.*?</ref>',re.DOTALL) #pattern for finding standard inline citation s
         outline_pattern=re.compile(b'\{\{\s*cite.*?\}\}|\{\{\s*Cite.*?\}\}|\{\{\s*wikicite.*?\}\}|\{\{\s*Citation.*?\}\}|\{\{\s*citation.*?\}\}',re.DOTALL) #pattern for finding other common citation templates that might be outside <ref> tags
         #PERHAPS ADD ARCHIVE SCRIPT FROM EARLIER, OR AS A LATER ARCHIVE PARSING FUNCTION
-        link_pattern=re.compile(b'(?<=\[)http://.*?[\s|\]"]|(?<=\[)https://.*?[\s|\]"]|(?<=\[)ftp://.*?[\s|\]"]|(?<=\[)//.*?[\s|\]"]|\|\s*url\s*=\s*.*?[\s|}]', re.DOTALL) #pattern for finding any external links in citation template
+        link_pattern=re.compile(b'(?<=\[)http://.*?[\s|\]"]|(?<=\[)https://.*?[\s|\]"]|(?<=\[)ftp://.*?[\s|\]"]|(?<=\[)//.*?[\s|\]"]|\|\s*url\s*=\s*.*?[\s|}"]', re.DOTALL) #pattern for finding any external links in citation template
         url_sub=re.compile(b'\|\s*url\s*=\s*') #pattern to remove 'url=' heading from links
         archive_pattern=re.compile(b'\|\s*archiveurl\s*=\s*.*?[\s|}]')
         archive_sub=re.compile(b'\|\s*archiveurl\s*=\s*')        
@@ -676,6 +685,13 @@ def numlinks_filter(df,op,number=1):
     outdf=df[op(df['links'].map(len),number)] 
     #return filtered dataframe
     return outdf
+    
+#create a boolean index for removing and documenting links based on some template
+def template_links_filter(link):   
+        if re.search("{{", link):            
+            return False
+        else: 
+            return True
 
 
 #THIS SHOULD BE USED AFTER DOMAIN ANALYSIS
@@ -866,9 +882,34 @@ def domain_parser(df, field_list=["index","url","netloc","domain","site_name","p
 
      return mergedf[field_list]
      
-
- 
+#saves a csv file of filtered links and returns them as dataFrame 
+def url_filter_print(domdf):
+    #remove bad google links, empty links, and links labeled broken
+    urlswanted=domdf['url'].drop(google_filter(domdf)).replace('',np.NaN).replace('BROKEN',np.NaN).dropna()
+    #get boolean vector of template style links    
+    template_bool=domdf['url'].map(template_links_filter)
+    #save template links
+    template_links=domdf['url'][np.logical_not(template_bool)]
+    #remove these links from main list
+    urlswanted=urlswanted[template_bool]
+    #save file of links and template links
+    pd.DataFrame(template_links).to_csv('template_links.txt',sep='\t',header=False, quotechar='|')
+    pd.DataFrame(urlswanted).to_csv('filtered_links.txt',sep='\t',header=False, quotechar='|')
+    #return dataframe of links
+    return pd.DataFrame(urlswanted)
     
+def isbn_filter_print(df, domdf):
+    #filter isbns associated with bad google links and empty isbns, convert to unicode string
+    isbndf=df['isbn'].replace(b'',np.NaN).dropna().map(lambda x: x.decode('utf-8'))
+    # filter broken isbns and alternate book id numbers
+    isbndf=isbndf[isbndf.map(isbn_alt_inv_remove)]
+    #save isbn list as file and return dataframe
+    pd.DataFrame(isbndf).to_csv('filtered_isbn_list.txt', sep='\t', header=False)
+    return pd.DataFrame(isbndf)
+
+                                                 
+    
+
 def wiki_to_sql():
     pass
 
